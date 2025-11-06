@@ -1,7 +1,7 @@
 from django.shortcuts import render, redirect, get_object_or_404
 from django.contrib import messages
 from django.http import HttpResponseForbidden
-from .models import User,Post
+from .models import User,Post,Comment,Like
 
 # --------------------------
 # Home View
@@ -144,6 +144,7 @@ def create(request):
 def read(request, pk):
     username = request.session.get('username')
     profile_img = None
+    user = None
 
     if username:
         try:
@@ -152,10 +153,37 @@ def read(request, pk):
         except User.DoesNotExist:
             username = None
             profile_img = None
-    post_obj = Post.objects.get(id=pk)
-    return render(request, "post.html", {"post": post_obj,"username": username,
-        "profile_img": profile_img,})
 
+    post_obj = get_object_or_404(Post, id=pk)
+    comments = post_obj.comments.order_by('-created_at')  # ✅ Get post comments
+
+    return render(request, "post.html", {
+        "post": post_obj,
+        "username": username,
+        "profile_img": profile_img,
+        "comments": comments
+    })
+
+
+# ✅ New function to handle adding comments
+def add_comment(request, pk):
+    username = request.session.get('username')
+    if not username:
+        messages.error(request, "You must be logged in to comment.")
+        return redirect('login')
+
+    post = get_object_or_404(Post, id=pk)
+    user = get_object_or_404(User, name=username)
+
+    if request.method == "POST":
+        content = request.POST.get("content", "").strip()
+        if content:
+            Comment.objects.create(post=post, user=user, content=content)
+            messages.success(request, "Comment added successfully!")
+        else:
+            messages.error(request, "Comment cannot be empty.")
+
+    return redirect('read', pk=pk)
 def posts(request):
     username = request.session.get('username')
     profile_img = None
@@ -252,4 +280,24 @@ def delete(request, pk):
 
     # Delete the post immediately (no confirmation)
     post.delete()
-    return redirect('profile')    
+    return redirect('profile')  
+
+def like_post(request, pk):
+    username = request.session.get('username')
+    if not username:
+        messages.error(request, "You must be logged in to like posts.")
+        return redirect('login')
+
+    post = get_object_or_404(Post, id=pk)
+    user = get_object_or_404(User, name=username)
+
+    # Check if already liked
+    existing_like = Like.objects.filter(post=post, user=user)
+    if existing_like.exists():
+        existing_like.delete()
+        messages.info(request, "You unliked this post.")
+    else:
+        Like.objects.create(post=post, user=user)
+        messages.success(request, "You liked this post!")
+
+    return redirect('read', pk=pk)  
